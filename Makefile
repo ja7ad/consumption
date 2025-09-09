@@ -1,6 +1,9 @@
+.PHONY: build fmt
+
 build:
 	@echo "Building the project..."
-	go build -o ./build/consumption ./cmd/consumption/main.go
+	@VERSION=$$(./scripts/version.sh); \
+	go build -ldflags "-X 'main.Version=$$VERSION'" -o ./build/consumption ./cmd/consumption/main.go
 
 fmt:
 	@echo "Formatting the code..."
