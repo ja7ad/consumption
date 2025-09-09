@@ -18,4 +18,16 @@ var (
 
 	// ErrShortStat indicates that /proc/<pid>/stat had fewer fields than expected.
 	ErrShortStat = errors.New("proc: short stat")
+
+	// ErrNoPIDs means caller passed an empty slice.
+	ErrNoPIDs = errors.New("collector: no pids")
+
+	// ErrAllExited means none of the requested PIDs existed at sampling time.
+	ErrAllExited = errors.New("collector: all pids exited")
+
+	// ErrBadDt means dtSec <= 0 was provided to Sample.
+	ErrBadDt = errors.New("collector: dtSec must be > 0")
+
+	// ErrUnsupported collector fails because the detected cgroup mode is unsupported.
+	ErrUnsupported = errors.New("collector: unsupported cgroup mode")
 )
