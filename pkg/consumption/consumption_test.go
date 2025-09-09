@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func expect(cfg Config, s proc.Snapshot) (pcpu, pdisk, pram, ptotal float64) {
+func expect(cfg *Config, s proc.Snapshot) (pcpu, pdisk, pram, ptotal float64) {
 	uvm := s.UVm
 	if uvm < 0 {
 		uvm = 0
@@ -51,7 +51,7 @@ func expect(cfg Config, s proc.Snapshot) (pcpu, pdisk, pram, ptotal float64) {
 }
 
 func TestConsumption_Sequence_WithLogs(t *testing.T) {
-	cfg := Config{
+	cfg := &Config{
 		PIdle:   5,
 		PMax:    20,
 		Gamma:   1.3,
@@ -117,7 +117,7 @@ func TestConsumption_Sequence_WithLogs(t *testing.T) {
 }
 
 func TestConsumption_ZeroAndClampPaths_WithLogs(t *testing.T) {
-	cfg := Config{
+	cfg := &Config{
 		PIdle: 5, PMax: 20, Gamma: 1.3,
 		ER: 4.8e-8, EW: 9.5e-8, EMemRef: 7e-10, EMemRSS: 3e-10,
 		Alpha: 0.2,
@@ -147,7 +147,7 @@ func TestConsumption_ZeroAndClampPaths_WithLogs(t *testing.T) {
 }
 
 func TestConsumption_AveragesOverMany_WithLogs(t *testing.T) {
-	cfg := Config{
+	cfg := &Config{
 		PIdle: 5, PMax: 20, Gamma: 1.3,
 		ER: 4.8e-8, EW: 9.5e-8,
 		EMemRef: 7e-10, EMemRSS: 3e-10,
@@ -183,7 +183,7 @@ func TestConsumption_AveragesOverMany_WithLogs(t *testing.T) {
 }
 
 func ExampleAccumulator_logging() {
-	cfg := Config{PIdle: 5, PMax: 20, Gamma: 1.3, ER: 4.8e-8, EW: 9.5e-8, EMemRef: 7e-10, EMemRSS: 3e-10}
+	cfg := &Config{PIdle: 5, PMax: 20, Gamma: 1.3, ER: 4.8e-8, EW: 9.5e-8, EMemRef: 7e-10, EMemRSS: 3e-10}
 	acc := New(cfg)
 	s := proc.Snapshot{TimeSec: 1, UVm: 0.5, UProc: 0.25}
 	r := acc.Apply(s)
