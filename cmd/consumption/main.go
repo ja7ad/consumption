@@ -29,7 +29,10 @@ import (
 )
 
 var (
-	csvF *os.File
+	csvF  *os.File
+	csvW  *csv.Writer
+	jsonF *os.File
+	htmlF *os.File
 
 	pretty bool
 	warmup int
@@ -97,10 +100,15 @@ Copyright (c) 2024 Javad Rajabzadeh Inc. All rights reserved.
 Examples:
   consumption -s 20 -i 1s $(pstree -p $(pidof goland) | grep -o '([0-9]\+)' | tr -d '()' | tr '\n' ' ')
   consumption --csv out.csv --json out.json 12345 23456 30000..30032`,
+		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return run(cmd.Context(), o, args)
 		},
+		SilenceUsage:  true,
+		SilenceErrors: true,
 	}
+
+	root.AddCommand(calc())
 
 	root.Flags().BoolVar(&pretty, "pretty", true, "format output as a table instead of CSV-like lines")
 	root.Flags().IntVar(&warmup, "warmup", 1, "number of initial samples to skip from display and averages")
@@ -125,6 +133,20 @@ Examples:
 		slog.Error(err.Error())
 		os.Exit(1)
 	}
+}
+
+func calc() *cobra.Command {
+	calculator := &cobra.Command{
+		Use: "calc",
+		Long: `Calculate power/energy from utilization snapshot csv or json
+		
+Examples:
+  consumption calc report.csv
+  consumption calc report.json
+		`,
+	}
+
+	return calculator
 }
 
 func run(ctx context.Context, o opts, args []string) error {
@@ -166,7 +188,9 @@ func run(ctx context.Context, o opts, args []string) error {
 	if err != nil {
 		return fmt.Errorf("collector: %w", err)
 	}
-	defer col.Close()
+	defer func() {
+		_ = col.Close()
+	}()
 
 	var tw *tabwriter.Writer
 	if pretty {
@@ -176,19 +200,13 @@ func run(ctx context.Context, o opts, args []string) error {
 		fmt.Println("# time, U_vm, U_proc, P_cpu(W), P_disk(W), P_ram(W), P_total(W), E_cum(J)")
 	}
 
-	// file outputs
-	var (
-		csvW  *csv.Writer
-		jsonF *os.File
-		htmlF *os.File
-	)
 	if o.csvPath != "" {
 		if err := os.MkdirAll(filepath.Dir(o.csvPath), 0o755); err == nil {
 			if f, er := os.Create(o.csvPath); er == nil {
 				csvF = f                // keep file
 				csvW = csv.NewWriter(f) // wrap writer
 				_ = csvW.Write([]string{
-					"time", "u_vm", "u_proc", "p_cpu_w", "p_disk_w", "p_ram_w", "p_total_w",
+					"time", "u_vm", "u_proc", "p_cpu_w", "p_disk_w", "p_ram_w", "p_idle_share_w", "p_total_w",
 					"e_cum_j", "read_bytes", "write_bytes", "refault_bytes", "rss_churn_bytes", "interval_sec",
 				})
 				csvW.Flush()
@@ -267,9 +285,9 @@ func run(ctx context.Context, o opts, args []string) error {
 
 			// stdout
 			if pretty {
-				printTableRow(tw, now, snap.UVm, snap.UProc, res.PCPU, res.PDisk, res.PRAM, res.PTotal, acc.EnergyCumJ())
+				printTableRow(tw, now, snap.UVm, snap.UProc, res.PCPU, res.PDisk, res.PRAM, pidleShare, res.PTotal, acc.EnergyCumJ())
 			} else {
-				printCsvLike(now.Format(time.RFC3339), snap.UVm, snap.UProc, res.PCPU, res.PDisk, res.PRAM, res.PTotal, acc.EnergyCumJ())
+				printCsvLike(now.Format(time.RFC3339), snap.UVm, snap.UProc, res.PCPU, res.PDisk, res.PRAM, pidleShare, res.PTotal, acc.EnergyCumJ())
 			}
 
 			// row for files
@@ -297,6 +315,7 @@ func run(ctx context.Context, o opts, args []string) error {
 					now.Format(time.RFC3339),
 					util.FmtFloat(r.UVm), util.FmtFloat(r.UProc),
 					util.FmtFloat(r.PCPU), util.FmtFloat(r.PDisk), util.FmtFloat(r.PRAM),
+					util.FmtFloat(r.PIdleShare),
 					util.FmtFloat(r.PTotal), util.FmtFloat(r.EnergyCumJ),
 					strconv.FormatUint(r.ReadBytes.ToUin64(), 10),
 					strconv.FormatUint(r.WriteBytes.ToUin64(), 10),
@@ -426,23 +445,22 @@ func newTable() *tabwriter.Writer {
 }
 
 func printTableHeader(tw *tabwriter.Writer) {
-	fmt.Fprintln(tw, "TIME\tU_vm\tU_proc\tP_cpu (W)\tP_disk (W)\tP_ram (W)\tP_total (W)\tE_cum (J)")
-	fmt.Fprintln(tw, "----\t----\t------\t---------\t----------\t---------\t-----------\t---------")
+	fmt.Fprintln(tw, "TIME\tU_vm\tU_proc\tP_cpu (W)\tP_disk (W)\tP_ram (W)\tP_idle_share (W)\tP_total (W)\tE_cum (J)")
+	fmt.Fprintln(tw, "----\t----\t------\t---------\t----------\t---------\t---------------\t-----------\t---------")
 	tw.Flush()
 }
 
-func printTableRow(tw *tabwriter.Writer, ts time.Time, uvm, up, pcpu, pdisk, pram, ptotal, ecum float64) {
-	// fixed decimals; aligned by tabs; no thousands separators to keep it simple/portable
-	fmt.Fprintf(tw, "%s\t%.4f\t%.4f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\n",
+func printTableRow(tw *tabwriter.Writer, ts time.Time, uvm, up, pcpu, pdisk, pram, pidle, ptotal, ecum float64) {
+	fmt.Fprintf(tw, "%s\t%.4f\t%.4f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\n",
 		ts.Format("2006-01-02 15:04:05"), util.Clamp01(uvm), util.Clamp01(up),
-		pcpu, pdisk, pram, ptotal, ecum,
+		pcpu, pdisk, pram, pidle, ptotal, ecum,
 	)
 	tw.Flush()
 }
 
-func printCsvLike(now string, uvm, up, pcpu, pdisk, pram, ptotal, ecum float64) {
-	fmt.Printf("%s, %.4f, %.4f, %.3f, %.3f, %.3f, %.3f, %.3f\n",
-		now, util.Clamp01(uvm), util.Clamp01(up), pcpu, pdisk, pram, ptotal, ecum)
+func printCsvLike(now string, uvm, up, pcpu, pdisk, pram, pidle, ptotal, ecum float64) {
+	fmt.Printf("%s, %.4f, %.4f, %.3f, %.3f, %.3f, %.3f, %.3f, %.3f\n",
+		now, util.Clamp01(uvm), util.Clamp01(up), pcpu, pdisk, pram, pidle, ptotal, ecum)
 }
 
 var tpl = template.Must(template.New("rep").Parse(`<!doctype html>
