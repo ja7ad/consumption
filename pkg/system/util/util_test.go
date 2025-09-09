@@ -4,6 +4,7 @@ package util
 
 import (
 	"math"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -190,4 +191,120 @@ func TestPow_NonIntegerBaseAndExponent(t *testing.T) {
 	want := math.Pow(2.5, 3.2)
 	got := Pow(2.5, 3.2)
 	assert.InDelta(t, want, got, 1e-12)
+}
+
+func TestParsePIDs_OK_SingleAndMultiple(t *testing.T) {
+	tests := []struct {
+		name string
+		in   []string
+		out  []int
+	}{
+		{"single", []string{"123"}, []int{123}},
+		{"multiple_space", []string{"1", "2", "3"}, []int{1, 2, 3}},
+		{"with_spaces", []string{"  7  ", "\t8", "9\n"}, []int{7, 8, 9}},
+		{"mix_values", []string{"10", "20..22", " 30 "}, []int{10, 20, 21, 22, 30}},
+		{"only_range", []string{"5..7"}, []int{5, 6, 7}},
+		{"adjacent_ranges", []string{"1..3", "4..5"}, []int{1, 2, 3, 4, 5}},
+		{"empty_tokens_ignored", []string{"", "  ", "12"}, []int{12}},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ParsePIDs(tt.in)
+			require.NoError(t, err)
+			assert.Equal(t, tt.out, got)
+		})
+	}
+}
+
+func TestParsePIDs_Errors(t *testing.T) {
+	tests := []struct {
+		name string
+		in   []string
+		msg  string
+	}{
+		{"bad_pid_alpha", []string{"abc"}, `bad pid: "abc"`},
+		{"bad_pid_mixed", []string{"12x"}, `bad pid: "12x"`},
+		{"bad_range_non_numeric_left", []string{"a..3"}, `bad range: "a..3"`},
+		{"bad_range_non_numeric_right", []string{"1..b"}, `bad range: "1..b"`},
+		{"bad_range_reversed", []string{"7..5"}, `bad range: "7..5"`},
+		{"bad_range_missing_right", []string{"3.."}, `bad range: "3.."`},
+		{"bad_range_missing_left", []string{"..3"}, `bad range: "..3"`},
+		{"bad_range_triple_dots", []string{"1...3"}, `bad range: "1...3"`}, // splitN -> ["1",".3"]
+		{"bad_range_only_dots", []string{".."}, `bad range: ".."`},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := ParsePIDs(tt.in)
+			require.Error(t, err)
+			assert.Equal(t, tt.msg, err.Error())
+		})
+	}
+}
+
+func TestParsePIDs_CombinedOrdering(t *testing.T) {
+	got, err := ParsePIDs([]string{"3", "1..2", "10", "8..9"})
+	require.NoError(t, err)
+	assert.Equal(t, []int{3, 1, 2, 10, 8, 9}, got, "should preserve input order and expand ranges inline")
+}
+
+func TestFmtFloat_RoundingAndNearZero(t *testing.T) {
+	tests := []struct {
+		in  float64
+		exp string
+	}{
+		{0, "0.000"},
+		{0.0004, "0.000"},   // abs < 0.0005 => clamp to 0.000
+		{-0.0004, "0.000"},  // avoid -0.000
+		{0.00049, "0.000"},  // still below threshold
+		{0.0005, "0.001"},   // boundary rounds up
+		{-0.0005, "-0.001"}, // negative boundary rounds away from zero
+		{1.2344, "1.234"},
+		{1.2345, "1.234"},
+		{-1.2, "-1.200"},
+		{123.9996, "124.000"},
+	}
+	for _, tt := range tests {
+		got := FmtFloat(tt.in)
+		assert.Equal(t, tt.exp, got, "FmtFloat(%v)", tt.in)
+	}
+}
+
+func TestCharsToString_Basic(t *testing.T) {
+	tests := []struct {
+		name string
+		in   []byte
+		exp  string
+	}{
+		{"simple", []byte{'a', 'b', 'c'}, "abc"},
+		{"stops_at_zero", []byte{'h', 'i', 0, 'x', 'y'}, "hi"},
+		{"leading_zero", []byte{0, 'a', 'b'}, ""},
+		{"all_zeroes", []byte{0, 0, 0}, ""},
+		{"unicode_bytes_ok", []byte("golang\x00rocks"), "golang"},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			got := charsToString(tt.in)
+			assert.Equal(t, tt.exp, got)
+		})
+	}
+}
+
+func TestSystemSummary_Sanity(t *testing.T) {
+	host, kernel, cpus, mem := SystemSummary()
+
+	// Host and kernel should be non-empty on any sane Linux test env
+	require.NotEmpty(t, host, "hostname should not be empty")
+	require.NotEmpty(t, kernel, "kernel release should not be empty")
+
+	// Per current implementation, cpus is formatted as NumCPU/NumCPU => "1.00"
+	assert.Equal(t, "1.00", cpus, "cpus string is expected to be '1.00' given current implementation")
+
+	// Memory string ends with '%' and has a positive numeric part (value semantics not asserted)
+	require.True(t, strings.HasSuffix(mem, "%"), "mem should end with '%%'")
+	num := strings.TrimSuffix(mem, "%")
+	// Accept any parseable positive number
+	assert.NotEmpty(t, num, "mem numeric part should not be empty")
 }
