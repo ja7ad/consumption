@@ -3,6 +3,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/csv"
@@ -10,12 +11,14 @@ import (
 	"errors"
 	"fmt"
 	"html/template"
+	"io"
 	"log/slog"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 	"syscall"
 	"text/tabwriter"
 	"time"
@@ -136,17 +139,207 @@ Examples:
 }
 
 func calc() *cobra.Command {
-	calculator := &cobra.Command{
-		Use: "calc",
-		Long: `Calculate power/energy from utilization snapshot csv or json
-		
+	cmd := &cobra.Command{
+		Use:   "calc <report.{csv,json}|->",
+		Short: "Calculate average power/energy from a CSV/JSON report",
+		Long: `Calculate power/energy from utilization snapshot CSV or JSON.
+
 Examples:
   consumption calc report.csv
   consumption calc report.json
-		`,
-	}
+  cat report.json | consumption calc -`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			path := args[0]
+			var r io.Reader
+			if path == "-" {
+				r = bufio.NewReader(os.Stdin)
+			} else {
+				f, err := os.Open(path)
+				if err != nil {
+					return err
+				}
+				defer f.Close()
+				r = bufio.NewReader(f)
+			}
 
-	return calculator
+			ext := strings.ToLower(filepath.Ext(path))
+			if path == "-" {
+				// best-effort sniff: read a few bytes
+				br := bufio.NewReader(r)
+				peek, _ := br.Peek(1)
+				if len(peek) == 1 && (peek[0] == '[' || peek[0] == '{') {
+					ext = ".json"
+				} else {
+					ext = ".csv"
+				}
+				r = br
+			}
+
+			var (
+				n                       int
+				sumCPU, sumDisk, sumRAM float64
+				sumTotal, sumDt         float64
+				lastTS                  *time.Time
+			)
+
+			switch ext {
+			case ".csv":
+				cr := csv.NewReader(r)
+				cr.ReuseRecord = true
+				header, err := cr.Read()
+				if err != nil {
+					return fmt.Errorf("csv read header: %w", err)
+				}
+				idx := make(map[string]int)
+				for i, h := range header {
+					idx[strings.ToLower(strings.TrimSpace(h))] = i
+				}
+				get := func(name string) (int, bool) { i, ok := idx[name]; return i, ok }
+
+				req := []string{"p_cpu_w", "p_disk_w", "p_ram_w", "p_total_w"}
+				for _, c := range req {
+					if _, ok := get(c); !ok {
+						return fmt.Errorf("csv missing required column %q", c)
+					}
+				}
+				iCPU, _ := get("p_cpu_w")
+				iDisk, _ := get("p_disk_w")
+				iRAM, _ := get("p_ram_w")
+				iTot, _ := get("p_total_w")
+				iDt, hasDt := get("interval_sec")
+				iTime, hasTime := get("time") // RFC3339 in your writer
+
+				parseF := func(s string) float64 {
+					f, _ := strconv.ParseFloat(strings.TrimSpace(s), 64)
+					return f
+				}
+
+				for {
+					rec, err := cr.Read()
+					if err == io.EOF {
+						break
+					}
+					if err != nil {
+						return fmt.Errorf("csv read: %w", err)
+					}
+					sumCPU += parseF(rec[iCPU])
+					sumDisk += parseF(rec[iDisk])
+					sumRAM += parseF(rec[iRAM])
+					sumTotal += parseF(rec[iTot])
+					n++
+
+					if hasDt {
+						sumDt += parseF(rec[iDt])
+					} else if hasTime {
+						if ts, err := time.Parse(time.RFC3339, strings.TrimSpace(rec[iTime])); err == nil {
+							if lastTS != nil {
+								sumDt += ts.Sub(*lastTS).Seconds()
+							}
+							lastTS = &ts
+						}
+					}
+				}
+
+			case ".json":
+				dec := json.NewDecoder(r)
+				// Expect either an array of rows or a single object per line (be lenient)
+				t, err := dec.Token()
+				if err != nil {
+					return fmt.Errorf("json: %w", err)
+				}
+
+				type jrow struct {
+					At          *time.Time `json:"time"` // RFC3339 in your writer
+					PCPU        float64    `json:"p_cpu_w"`
+					PDisk       float64    `json:"p_disk_w"`
+					PRAM        float64    `json:"p_ram_w"`
+					PTotal      float64    `json:"p_total_w"`
+					IntervalSec float64    `json:"interval_sec"`
+				}
+
+				if d, ok := t.(json.Delim); ok && d == '[' {
+					for dec.More() {
+						var x jrow
+						if err := dec.Decode(&x); err != nil {
+							return fmt.Errorf("json row: %w", err)
+						}
+						sumCPU += x.PCPU
+						sumDisk += x.PDisk
+						sumRAM += x.PRAM
+						sumTotal += x.PTotal
+						n++
+
+						if x.IntervalSec > 0 {
+							sumDt += x.IntervalSec
+						} else if x.At != nil {
+							if lastTS != nil {
+								sumDt += x.At.Sub(*lastTS).Seconds()
+							}
+							lastTS = x.At
+						}
+					}
+					// consume closing ']'
+					if _, err := dec.Token(); err != nil {
+						return fmt.Errorf("json closing token: %w", err)
+					}
+				} else {
+					// fallback: NDJSON-ish (one object per line)
+					dec = json.NewDecoder(io.MultiReader(strings.NewReader(fmt.Sprintf("%v", t)), dec.Buffered()))
+					for {
+						var x jrow
+						if err := dec.Decode(&x); err != nil {
+							if err == io.EOF {
+								break
+							}
+							return fmt.Errorf("json row: %w", err)
+						}
+						sumCPU += x.PCPU
+						sumDisk += x.PDisk
+						sumRAM += x.PRAM
+						sumTotal += x.PTotal
+						n++
+						if x.IntervalSec > 0 {
+							sumDt += x.IntervalSec
+						} else if x.At != nil {
+							if lastTS != nil {
+								sumDt += x.At.Sub(*lastTS).Seconds()
+							}
+							lastTS = x.At
+						}
+					}
+				}
+
+			default:
+				return fmt.Errorf("unsupported file type: %q (use .csv, .json, or -)", ext)
+			}
+
+			if n == 0 {
+				return fmt.Errorf("no rows found")
+			}
+
+			avgCPU := sumCPU / float64(n)
+			avgDisk := sumDisk / float64(n)
+			avgRAM := sumRAM / float64(n)
+			avgTot := sumTotal / float64(n)
+
+			var approx string
+			if sumDt > 0 {
+				sec := sumDt / float64(n)
+				approx = (time.Duration(sec * float64(time.Second))).Round(1 * time.Millisecond).String()
+			} else {
+				approx = "unknown"
+			}
+
+			fmt.Printf("\nconsumption avg (over %d samples of ~%s):\n", n, approx)
+			fmt.Printf("- watt (cpu):    %.3f W\n", avgCPU)
+			fmt.Printf("- watt (disk):   %.3f W\n", avgDisk)
+			fmt.Printf("- watt (ram):    %.3f W\n", avgRAM)
+			fmt.Printf("- watt (total):  %.3f W\n\n", avgTot)
+			return nil
+		},
+	}
+	return cmd
 }
 
 func run(ctx context.Context, o opts, args []string) error {
