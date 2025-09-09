@@ -167,7 +167,7 @@ func TestReadProcStat_FieldParsingWithSpacesInComm(t *testing.T) {
 	f, err := os.Open("/proc/self/stat")
 	require.NoError(t, err)
 	defer f.Close()
-	var buf = make([]byte, 4096)
+	buf := make([]byte, 4096)
 	n, _ := f.Read(buf)
 	line := string(buf[:n])
 	assert.GreaterOrEqual(t, strings.LastIndex(line, ") "), 0, "expected ') ' delimiter in /proc/self/stat")

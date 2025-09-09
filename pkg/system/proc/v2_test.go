@@ -170,11 +170,10 @@ func TestV2_Sample_SelfTwoTicksWithWorkload(t *testing.T) {
 	assert.InDelta(t, dt2, s2.TimeSec, 1e-3)
 
 	// Expect some activity with the induced workload
-	hasSignal :=
-		(s1.UProc > 0 || s2.UProc > 0) ||
-			(s1.ReadBytes+s1.WriteBytes+s2.ReadBytes+s2.WriteBytes) > 0 ||
-			(s1.RSSChurnBytes+s2.RSSChurnBytes) > 0 ||
-			(s1.RefaultBytes+s2.RefaultBytes) > 0
+	hasSignal := (s1.UProc > 0 || s2.UProc > 0) ||
+		(s1.ReadBytes+s1.WriteBytes+s2.ReadBytes+s2.WriteBytes) > 0 ||
+		(s1.RSSChurnBytes+s2.RSSChurnBytes) > 0 ||
+		(s1.RefaultBytes+s2.RefaultBytes) > 0
 	assert.True(t, hasSignal, "expected some activity with induced workload")
 
 	// RefaultBytes may legitimately be zero on some kernels/configs, so don't assert >0.
