@@ -31,7 +31,7 @@ import (
 	"github.com/ja7ad/consumption/pkg/system/proc"
 )
 
-var Version string
+var Version = "dev"
 
 var (
 	csvF  *os.File
