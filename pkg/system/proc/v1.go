@@ -5,6 +5,7 @@ package proc
 import (
 	"runtime"
 
+	"github.com/ja7ad/consumption/pkg/system/util"
 	"github.com/ja7ad/consumption/pkg/types"
 )
 
@@ -78,9 +79,9 @@ func (c *v1Collector) Sample(pids []int, dtSec float64) (Snapshot, error) {
 	if err != nil {
 		return Snapshot{}, err
 	}
-	dActive := deltaU64(vmActiveNow, c.vmActivePrev)
-	dTotal := deltaU64(vmTotalNow, c.vmTotalPrev)
-	uvm := safeDiv(float64(dActive), float64(dTotal)) // [0,1] nominal
+	dActive := util.DeltaU64(vmActiveNow, c.vmActivePrev)
+	dTotal := util.DeltaU64(vmTotalNow, c.vmTotalPrev)
+	uvm := util.SafeDiv(float64(dActive), float64(dTotal)) // [0,1] nominal
 	c.vmActivePrev, c.vmTotalPrev = vmActiveNow, vmTotalNow
 
 	// EMA smoothing on VM utilization (optional)
@@ -93,7 +94,7 @@ func (c *v1Collector) Sample(pids []int, dtSec float64) (Snapshot, error) {
 		}
 		uvm = c.emaPrevUV
 	}
-	uvm = clamp01(uvm)
+	uvm = util.Clamp01(uvm)
 
 	// Aggregate per-PID deltas
 	var (
@@ -114,13 +115,13 @@ func (c *v1Collector) Sample(pids []int, dtSec float64) (Snapshot, error) {
 		ut, st, mn, mj, err := ReadProcStat(pid)
 		if err == nil {
 			j := ut + st
-			cpuJiffiesDelta += deltaU64(j, c.cpuPrev[pid])
+			cpuJiffiesDelta += util.DeltaU64(j, c.cpuPrev[pid])
 			c.cpuPrev[pid] = j
 			// Minor faults (first-touch, no IO)
-			dMn := deltaU64(mn, c.minfltPrev[pid])
+			dMn := util.DeltaU64(mn, c.minfltPrev[pid])
 			c.minfltPrev[pid] = mn
 			// Major faults are ignored for RAM proxy (usually involve disk)
-			dMj := deltaU64(mj, c.majfltPrev[pid])
+			dMj := util.DeltaU64(mj, c.majfltPrev[pid])
 			c.majfltPrev[pid] = mj
 			_ = dMj
 			// Convert minor faults to bytes (rough proxy)
@@ -129,8 +130,8 @@ func (c *v1Collector) Sample(pids []int, dtSec float64) (Snapshot, error) {
 
 		// I/O bytes
 		if rNow, wNow, err := ReadProcIO(pid); err == nil {
-			readDelta += deltaU64(rNow, c.rbytesPrev[pid])
-			writeDelta += deltaU64(wNow, c.wbytesPrev[pid])
+			readDelta += util.DeltaU64(rNow, c.rbytesPrev[pid])
+			writeDelta += util.DeltaU64(wNow, c.wbytesPrev[pid])
 			c.rbytesPrev[pid] = rNow
 			c.wbytesPrev[pid] = wNow
 		}
@@ -152,8 +153,8 @@ func (c *v1Collector) Sample(pids []int, dtSec float64) (Snapshot, error) {
 
 	// Process CPU utilization (seconds from jiffies) → normalized to [0,1]
 	cpuSecProc := float64(cpuJiffiesDelta) / float64(c.clkTck)
-	uproc := safeDiv(cpuSecProc, float64(c.nproc)*dtSec)
-	uproc = clamp01(uproc)
+	uproc := util.SafeDiv(cpuSecProc, float64(c.nproc)*dtSec)
+	uproc = util.Clamp01(uproc)
 
 	return Snapshot{
 		TimeSec:       dtSec,

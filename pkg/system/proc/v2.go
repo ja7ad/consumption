@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/ja7ad/consumption/pkg/system/util"
 	"github.com/ja7ad/consumption/pkg/types"
 )
 
@@ -77,7 +78,7 @@ func newV2(alpha float64) (Collector, error) {
 	}
 
 	return &v2Collector{
-		alpha:           clamp01(alpha),
+		alpha:           util.Clamp01(alpha),
 		pageSize:        PageSize(),
 		nproc:           runtime.NumCPU(),
 		rootCG:          root,
@@ -133,16 +134,16 @@ func (c *v2Collector) Sample(pids []int, dtSec float64) (Snapshot, error) {
 		return Snapshot{}, fmt.Errorf("read group cpu.stat: %w", err)
 	}
 
-	dVMusec := deltaU64(vmUseNow, c.vmUsageUsecPrev)
-	dGRPusec := deltaU64(grpUseNow, c.grpUsageUsecPrev)
+	dVMusec := util.DeltaU64(vmUseNow, c.vmUsageUsecPrev)
+	dGRPusec := util.DeltaU64(grpUseNow, c.grpUsageUsecPrev)
 	c.vmUsageUsecPrev, c.grpUsageUsecPrev = vmUseNow, grpUseNow
 
 	// Utilizations
 	// vm seconds over dt and nproc
-	uVm := safeDiv(float64(dVMusec)/1e6, float64(c.nproc)*dtSec)
+	uVm := util.SafeDiv(float64(dVMusec)/1e6, float64(c.nproc)*dtSec)
 	// group seconds normalized the same (NOTE: this is already "absolute" group utilization,
 	// but we report it as UProc in [0,1] relative to total capacity)
-	uProc := safeDiv(float64(dGRPusec)/1e6, float64(c.nproc)*dtSec)
+	uProc := util.SafeDiv(float64(dGRPusec)/1e6, float64(c.nproc)*dtSec)
 
 	// EMA smoothing on VM utilization (optional)
 	if c.alpha > 0 {
@@ -154,8 +155,8 @@ func (c *v2Collector) Sample(pids []int, dtSec float64) (Snapshot, error) {
 		}
 		uVm = c.emaPrevUV
 	}
-	uVm = clamp01(uVm)
-	uProc = clamp01(uProc)
+	uVm = util.Clamp01(uVm)
+	uProc = util.Clamp01(uProc)
 
 	// Memory refaults (workingset_refault) from memory.stat
 	wsRefNow, err := readWorkingsetRefault(filepath.Join(c.grpCG, "memory.stat"))
@@ -163,7 +164,7 @@ func (c *v2Collector) Sample(pids []int, dtSec float64) (Snapshot, error) {
 		// Some kernels may not expose it (unlikely on v2). If missing, treat as zero.
 		wsRefNow = c.wsRefaultPrev
 	}
-	dWsRef := deltaU64(wsRefNow, c.wsRefaultPrev)
+	dWsRef := util.DeltaU64(wsRefNow, c.wsRefaultPrev)
 	c.wsRefaultPrev = wsRefNow
 	refaultBytes := dWsRef * uint64(c.pageSize)
 
@@ -178,8 +179,8 @@ func (c *v2Collector) Sample(pids []int, dtSec float64) (Snapshot, error) {
 
 		// IO
 		if rNow, wNow, err := ReadProcIO(pid); err == nil {
-			readDelta += deltaU64(rNow, c.rbytesPrev[pid])
-			writeDelta += deltaU64(wNow, c.wbytesPrev[pid])
+			readDelta += util.DeltaU64(rNow, c.rbytesPrev[pid])
+			writeDelta += util.DeltaU64(wNow, c.wbytesPrev[pid])
 			c.rbytesPrev[pid] = rNow
 			c.wbytesPrev[pid] = wNow
 		}
