@@ -236,8 +236,3 @@ $$
 ## License
 
 MIT © 2024 [Javad Rajabzadeh](https://github.com/ja7ad)
-
-```
-
-Would you like me to also add **badges for CI/CD builds and latest release version** (so the README auto-shows the latest tag)?
-```
