@@ -31,6 +31,8 @@ import (
 	"github.com/ja7ad/consumption/pkg/system/proc"
 )
 
+var Version string
+
 var (
 	csvF  *os.File
 	csvW  *csv.Writer
@@ -89,8 +91,9 @@ func main() {
 	var o opts
 
 	root := &cobra.Command{
-		Use:   "consumption [PID|PID..PID]...",
-		Short: "Process power/energy estimation service",
+		Use:     "consumption [PID|PID..PID]...",
+		Short:   "Process power/energy estimation service",
+		Version: Version,
 		Long: `The consumption tool monitors Linux processes (by PID or process-tree)
 and estimates their resource-based power draw (CPU, disk I/O, RAM proxies).
 It samples utilization via /proc or cgroup (v1/v2) and applies a configurable
@@ -112,6 +115,7 @@ Examples:
 	}
 
 	root.AddCommand(calc())
+	root.AddCommand(version())
 
 	root.Flags().BoolVar(&pretty, "pretty", true, "format output as a table instead of CSV-like lines")
 	root.Flags().IntVar(&warmup, "warmup", 1, "number of initial samples to skip from display and averages")
@@ -136,6 +140,22 @@ Examples:
 		slog.Error(err.Error())
 		os.Exit(1)
 	}
+}
+
+func version() *cobra.Command {
+	ver := &cobra.Command{
+		Use:   "version",
+		Short: "Print version",
+		Run: func(cmd *cobra.Command, args []string) {
+			if Version == "" {
+				fmt.Println("consumption version: (devel)")
+				return
+			}
+			fmt.Printf("consumption version: %s\n", Version)
+		},
+	}
+
+	return ver
 }
 
 func calc() *cobra.Command {
