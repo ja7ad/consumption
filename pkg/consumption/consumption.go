@@ -21,13 +21,58 @@ type Accumulator struct {
 }
 
 // New creates an accumulator with the given config.
-// Alpha is optional; pass 0 if you don't want to charge any idle share.
+// Fields > 0 (or valid ranges) in cfg override defaults.
+// Notes:
+//   - Alpha in [0..1] is accepted verbatim (0 is a valid choice).
+//   - EMemRef/EMemRSS: zero is treated as an intentional "disable" and respected.
+//   - Negative values are treated as "unset" and defaulted.
+//   - PIdle/PMax/Gamma/ER/EW must be > 0 to override defaults.
 func New(cfg *Config) *Accumulator {
+	base := _defaultConfig()
+
+	// No user cfg: use defaults as-is.
 	if cfg == nil {
-		cfg = _defaultConfig()
+		return &Accumulator{cfg: base}
 	}
 
-	return &Accumulator{cfg: cfg}
+	merged := *base
+
+	// Positive-only overrides
+	if cfg.PIdle > 0 {
+		merged.PIdle = cfg.PIdle
+	}
+	if cfg.PMax > 0 {
+		merged.PMax = cfg.PMax
+	}
+	if cfg.Gamma > 0 {
+		merged.Gamma = cfg.Gamma
+	}
+	if cfg.ER > 0 {
+		merged.ER = cfg.ER
+	}
+	if cfg.EW > 0 {
+		merged.EW = cfg.EW
+	}
+
+	// RAM proxies: allow zero to intentionally disable, default only if negative.
+	if cfg.EMemRef >= 0 {
+		merged.EMemRef = cfg.EMemRef
+	}
+	if cfg.EMemRSS >= 0 {
+		merged.EMemRSS = cfg.EMemRSS
+	}
+
+	// Alpha must be in [0..1]; 0 is a valid "no idle share".
+	if cfg.Alpha >= 0 && cfg.Alpha <= 1 {
+		merged.Alpha = cfg.Alpha
+	}
+
+	// Optional sanity: ensure PMax >= PIdle; if not, clamp to avoid nonsense.
+	if merged.PMax < merged.PIdle {
+		merged.PMax = merged.PIdle
+	}
+
+	return &Accumulator{cfg: &merged}
 }
 
 // Apply runs the model on a single snapshot (one tick), returns the power split,
