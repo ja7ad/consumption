@@ -2,17 +2,13 @@ builds:
   - id: consumption
     main: ./cmd/consumption/main.go
     binary: consumption
-    env:
-      - CGO_ENABLED=0
-      - VERSION=$(./scripts/version.sh)
     ldflags:
-      - -X main.Version={{ .Env.VERSION }}
+      - -X main.Version={{ .Tag }}-{{ .ShortCommit }}
     goos:
       - linux
     goarch:
       - amd64
       - arm64
-
 
 nfpms:
   - license: Apache-2.0
