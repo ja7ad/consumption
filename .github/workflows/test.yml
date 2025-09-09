@@ -23,34 +23,42 @@ jobs:
         run: make fmt
 
   tests:
-    name: tests (cgroup=${{ matrix.cgroup }})
-    strategy:
-      fail-fast: false
-      matrix:
-        cgroup: ["v1", "v2"]
-        include:
-          - cgroup: "v1"
-            runner: "cgroup-v1"
-          - cgroup: "v2"
-            runner: "cgroup-v2"
-    runs-on: [self-hosted, linux, "${{ matrix.runner }}"]
+    name: tests
+    runs-on: ubuntu-latest
+    container:
+      image: golang:1.25
+      options: --privileged --cgroupns=host
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: "1.25"
-      - name: Verify cgroup mode
+
+      - name: Verify cgroup mode and root access
         run: |
+          echo "=== User and privileges ==="
+          whoami
+          id
+          echo "=== Cgroup filesystem ==="
           echo -n "Detected cgroup fs type: "
           stat -fc %T /sys/fs/cgroup || true
-          echo "--- mounts ---"
+          echo "=== Cgroup version ==="
+          if [ -f /sys/fs/cgroup/cgroup.controllers ]; then
+            echo "cgroup v2 (unified hierarchy)"
+          elif [ -d /sys/fs/cgroup/cpu ]; then
+            echo "cgroup v1 (legacy hierarchy)"
+          else
+            echo "Unknown cgroup setup"
+          fi
+          echo "=== Available cgroup controllers ==="
+          ls -la /sys/fs/cgroup/ | head -10
+          echo "=== Mounts ==="
           mount | grep cgroup || true
+
       - name: Download modules
         run: go mod download
-      - name: Run tests
-        run: go test --race -v -gcflags=-l -coverprofile=coverage.txt -covermode=atomic ./...
+
+      - name: Run tests with root privileges
+        run: go test -race -v -gcflags=-l -coverprofile=coverage.txt -covermode=atomic ./...
+
       - name: Upload coverage
         uses: codecov/codecov-action@v5
         env:
