@@ -1,0 +1,58 @@
+name: Testing and coverage
+
+on:
+  pull_request:
+  merge_group:
+  push:
+    branches: [ main ]
+
+jobs:
+  fmt:
+    name: fmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 1.25
+      - uses: actions/checkout@v4
+      - name: Run go vet
+        run: go vet ./...
+      - name: Install fmt
+        run: go install mvdan.cc/gofumpt@latest
+      - name: Run fmt
+        run: make fmt
+
+  tests:
+    name: tests (cgroup=${{ matrix.cgroup }})
+    strategy:
+      fail-fast: false
+      matrix:
+        go: [1.25]
+        cgroup: [v1, v2]
+    runs-on: [self-hosted, linux, cgroup-${{ matrix.cgroup }}]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
+
+      - name: Verify cgroup mode
+        run: |
+          echo -n "Detected cgroup fs type: "
+          stat -fc %T /sys/fs/cgroup || true
+          echo "--- mounts ---"
+          mount | grep cgroup || true
+
+      - name: Download modules
+        run: go mod download
+
+      - name: Run tests
+        run: go test --race -v -gcflags=-l -coverprofile=coverage.txt -covermode=atomic ./...
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v5
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
