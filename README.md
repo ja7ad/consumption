@@ -14,8 +14,6 @@ using CPU utilization, disk I/O, and memory activity as proxies.
 - [Releases](#releases)
 - [Usage Examples](#usage-examples)
 - [Algorithm](#algorithm)
-- [License](#license)
-
 
 ## Features
 
@@ -230,9 +228,3 @@ $$
 
 - **Network I/O**: add a term $e_n \cdot N_b$ with $e_n$ = energy per byte transferred.
 - **Device-specific coefficients**: tune $e_r$, $e_w$, $e_{\text{ref}}$, $e_{\text{rss}}$ for different hardware.
-
----
-
-## License
-
-MIT © 2024 [Javad Rajabzadeh](https://github.com/ja7ad)
