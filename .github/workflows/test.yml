@@ -27,16 +27,20 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        go: ["1.25"]
         cgroup: ["v1", "v2"]
-    runs-on: [self-hosted, linux, cgroup-${{ matrix.cgroup }}]
+        include:
+          - cgroup: "v1"
+            runner: "cgroup-v1"
+          - cgroup: "v2"
+            runner: "cgroup-v2"
+    runs-on: [self-hosted, linux, "${{ matrix.runner }}"]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: ${{ matrix.go }}
+          go-version: "1.25"
       - name: Verify cgroup mode
         run: |
           echo -n "Detected cgroup fs type: "
