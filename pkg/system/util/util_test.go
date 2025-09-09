@@ -91,3 +91,103 @@ func TestEMA_ClosedFormMatch(t *testing.T) {
 	want := target * (1 - math.Pow(1-alpha, float64(steps)))
 	assert.InDelta(t, want, out, 1e-6)
 }
+
+func TestDeltaU64(t *testing.T) {
+	t.Run("normal_increase", func(t *testing.T) {
+		assert.Equal(t, uint64(10), DeltaU64(110, 100))
+	})
+	t.Run("no_change", func(t *testing.T) {
+		assert.Equal(t, uint64(0), DeltaU64(100, 100))
+	})
+	t.Run("wrap_or_prev_unset", func(t *testing.T) {
+		// now < prev → treated as wrap/reset → 0
+		assert.Equal(t, uint64(0), DeltaU64(99, 100))
+	})
+	t.Run("large_values", func(t *testing.T) {
+		const hi = ^uint64(0) - 5
+		assert.Equal(t, uint64(5), DeltaU64(hi, hi-5))
+	})
+}
+
+func TestSafeDiv(t *testing.T) {
+	const eps = 1e-12
+
+	t.Run("regular_positive", func(t *testing.T) {
+		require.InDelta(t, 2.5, SafeDiv(5, 2), 1e-12)
+	})
+	t.Run("regular_negative", func(t *testing.T) {
+		require.InDelta(t, -2.5, SafeDiv(-5, 2), 1e-12)
+		require.InDelta(t, -2.5, SafeDiv(5, -2), 1e-12)
+		require.InDelta(t, 2.5, SafeDiv(-5, -2), 1e-12)
+	})
+	t.Run("zero_denominator", func(t *testing.T) {
+		assert.Equal(t, 0.0, SafeDiv(123, 0))
+	})
+	t.Run("tiny_denominator_below_eps", func(t *testing.T) {
+		d := eps / 10
+		assert.Equal(t, 0.0, SafeDiv(1, d))
+		assert.Equal(t, 0.0, SafeDiv(1, -d))
+	})
+	t.Run("tiny_denominator_above_eps", func(t *testing.T) {
+		d := eps * 10
+		require.InDelta(t, 1.0/d, SafeDiv(1, d), 1e-12)
+		require.InDelta(t, -1.0/d, SafeDiv(1, -d), 1e-12)
+	})
+}
+
+func TestClamp01(t *testing.T) {
+	t.Run("below_zero", func(t *testing.T) {
+		assert.Equal(t, 0.0, Clamp01(-1e9))
+	})
+	t.Run("zero_and_one", func(t *testing.T) {
+		assert.Equal(t, 0.0, Clamp01(0))
+		assert.Equal(t, 1.0, Clamp01(1))
+	})
+	t.Run("within_range", func(t *testing.T) {
+		assert.InDelta(t, 0.123, Clamp01(0.123), 0)
+		assert.InDelta(t, 0.999, Clamp01(0.999), 0)
+	})
+	t.Run("above_one", func(t *testing.T) {
+		assert.Equal(t, 1.0, Clamp01(42))
+		assert.Equal(t, 1.0, Clamp01(math.MaxFloat64))
+	})
+	t.Run("NaN_becomes_zero", func(t *testing.T) {
+		assert.Equal(t, 0.0, Clamp01(math.NaN()))
+	})
+	t.Run("infinities", func(t *testing.T) {
+		assert.Equal(t, 1.0, Clamp01(math.Inf(1)))
+		assert.Equal(t, 0.0, Clamp01(math.Inf(-1)))
+	})
+}
+
+func TestPow_EdgeCases(t *testing.T) {
+	// a <= 0 should return 0
+	assert.Equal(t, 0.0, Pow(0, 2))
+	assert.Equal(t, 0.0, Pow(-3, 2))
+}
+
+func TestPow_BasicIntegerExponents(t *testing.T) {
+	assert.InDelta(t, 1.0, Pow(1, 5), 1e-12)
+	assert.InDelta(t, 8.0, Pow(2, 3), 1e-12)
+	assert.InDelta(t, 81.0, Pow(3, 4), 1e-12)
+}
+
+func TestPow_FractionalExponents(t *testing.T) {
+	// sqrt(4) = 2
+	require.InDelta(t, 2.0, Pow(4, 0.5), 1e-12)
+
+	// cube root of 27 = 3
+	require.InDelta(t, 3.0, Pow(27, 1.0/3.0), 1e-12)
+}
+
+func TestPow_LargeExponent(t *testing.T) {
+	// 2^20 = 1048576
+	require.InDelta(t, math.Pow(2, 20), Pow(2, 20), 1e-6)
+}
+
+func TestPow_NonIntegerBaseAndExponent(t *testing.T) {
+	// 2.5^3.2 compared to math.Pow
+	want := math.Pow(2.5, 3.2)
+	got := Pow(2.5, 3.2)
+	assert.InDelta(t, want, got, 1e-12)
+}
