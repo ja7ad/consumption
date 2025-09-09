@@ -5,6 +5,10 @@ import "fmt"
 // Bytes is a uint64 wrapper representing a size in bytes.
 type Bytes uint64
 
+func ToBytes(v uint64) Bytes {
+	return Bytes(v)
+}
+
 // Humanized returns a human-readable string with automatic unit (B, KB, MB, GB, TB).
 func (b Bytes) Humanized() string {
 	const unit = 1024
