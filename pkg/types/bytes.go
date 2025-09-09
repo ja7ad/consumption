@@ -35,3 +35,7 @@ func (b Bytes) MB() float64 { return float64(b) / (1024 * 1024) }
 
 // GB returns the number of gigabytes (1024 base).
 func (b Bytes) GB() float64 { return float64(b) / (1024 * 1024 * 1024) }
+
+func (b Bytes) ToUin64() uint64 {
+	return uint64(b)
+}
