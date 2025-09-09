@@ -2,6 +2,7 @@
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/ja7ad/consumption.svg)](https://pkg.go.dev/github.com/ja7ad/consumption)
 [![Go Report Card](https://goreportcard.com/badge/github.com/ja7ad/consumption)](https://goreportcard.com/report/github.com/ja7ad/consumption)
+[![codecov](https://codecov.io/gh/ja7ad/consumption/graph/badge.svg?token=dvJJATbPpF)](https://codecov.io/gh/ja7ad/consumption)
 
 A lightweight Linux tool to **monitor processes and estimate their power/energy consumption**  
 using CPU utilization, disk I/O, and memory activity as proxies.  
