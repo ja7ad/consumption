@@ -11,5 +11,12 @@ else
     COMMIT="unknown"
 fi
 
-VERSION="${TAG}-${COMMIT}"
-echo "v${VERSION}"
+# Ensure single leading v
+if [[ $TAG != v* ]]; then
+  BASE="v${TAG}"
+else
+  BASE="$TAG"
+fi
+
+VERSION="${BASE}-${COMMIT}"
+echo "$VERSION"
