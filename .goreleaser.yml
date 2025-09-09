@@ -1,0 +1,25 @@
+builds:
+  - id: consumption
+    main: ./cmd/consumption/main.go
+    binary: consumption
+    env:
+      - CGO_ENABLED=0
+      - VERSION=$(./scripts/version.sh)
+    ldflags:
+      - -X main.Version={{ .Env.VERSION }}
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+
+
+nfpms:
+  - license: Apache-2.0
+    maintainer: Javad Rajabzadeh <ja7ad@live.com>
+    homepage: https://github.com/ja7ad/consumption
+    bindir: /usr/local/bin
+    description: Process power/energy estimation service
+    formats:
+      - deb
+      - rpm
