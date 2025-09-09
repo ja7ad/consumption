@@ -97,39 +97,6 @@ func ParsePIDs(args []string) ([]int, error) {
 	return out, nil
 }
 
-func PrintHostInfo() {
-	hn, _ := os.Hostname()
-	kernel := uname()
-	mem := MemTotalKB()
-	fmt.Printf("# host: %s | kernel: %s | cpus: %d | mem: %.1f GiB\n",
-		hn, kernel, runtime.NumCPU(), float64(mem)/(1024*1024))
-}
-
-func uname() string {
-	b, err := os.ReadFile("/proc/version")
-	if err == nil {
-		return strings.TrimSpace(string(b))
-	}
-	return runtime.GOOS + "/" + runtime.GOARCH
-}
-
-func MemTotalKB() uint64 {
-	b, err := os.ReadFile("/proc/meminfo")
-	if err != nil {
-		return 0
-	}
-	for _, ln := range strings.Split(string(b), "\n") {
-		if strings.HasPrefix(ln, "MemTotal:") {
-			fs := strings.Fields(ln)
-			if len(fs) >= 2 {
-				v, _ := strconv.ParseUint(fs[1], 10, 64)
-				return v
-			}
-		}
-	}
-	return 0
-}
-
 func FmtFloat(f float64) string {
 	// avoid -0.000 and very long tails
 	if math.Abs(f) < 0.0005 {
